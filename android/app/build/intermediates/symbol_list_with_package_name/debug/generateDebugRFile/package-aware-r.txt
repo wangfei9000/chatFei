@@ -1,3 +1,0 @@
-com.chatfei.app
-mipmap ic_launcher
-style Theme_ChatFei

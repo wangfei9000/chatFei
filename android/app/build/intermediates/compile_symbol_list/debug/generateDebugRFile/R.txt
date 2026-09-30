@@ -1,2 +1,0 @@
-int mipmap ic_launcher 0x0
-int style Theme_ChatFei 0x0
