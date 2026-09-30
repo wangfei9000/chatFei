@@ -6,6 +6,7 @@ import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -20,6 +21,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -41,7 +45,7 @@ class MainActivity : ComponentActivity() {
         NavigationBarItem(tab==1,{tab=1},{Icon(Icons.Default.People,"在线")},label={Text("在线")})
         NavigationBarItem(tab==2,{tab=2},{Icon(Icons.Default.Person,"我的")},label={Text("我的")})
     }}){padding->Box(Modifier.padding(padding).fillMaxSize()){
-        when{state.loading->CircularProgressIndicator(Modifier.align(Alignment.Center));tab==0->ConversationList(state.conversations,vm::open);tab==1->OnlineList(state.online,vm::startPrivate,vm::createGroup);else->Profile(state,vm::rename,vm::updateApiBaseUrl)}
+        when{state.loading->CircularProgressIndicator(Modifier.align(Alignment.Center));tab==0->ConversationList(state.conversations,vm::open);tab==1->OnlineList(state.online,vm::startPrivate,vm::createGroup);else->Profile(state,vm::rename,vm::updateApiBaseUrl,vm::updateAesKey)}
         state.error?.let{Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.align(Alignment.BottomCenter).padding(16.dp))}
     }}
 }
@@ -54,17 +58,23 @@ class MainActivity : ComponentActivity() {
     Column{TopAppBar(title={Text("在线的人")},actions={IconButton({dialog=true}){Icon(Icons.Default.GroupAdd,"创建群聊")}});if(values.isEmpty())Empty("暂时没有其他人在线")else LazyColumn{items(values,key={it.userId}){u->ListItem(headlineContent={Text(u.nickname)},supportingContent={Text("在线")},leadingContent={Icon(Icons.Default.Circle,null,tint=MaterialTheme.colorScheme.primary)},trailingContent={Button({start(u)}){Text("聊天")}});HorizontalDivider()}}}
     if(dialog){var name by remember{mutableStateOf("")};val selected=remember{mutableStateListOf<String>()};AlertDialog(onDismissRequest={dialog=false},title={Text("创建群聊")},text={Column{OutlinedTextField(name,{name=it},label={Text("群名称")});Spacer(Modifier.height(8.dp));values.forEach{u->Row(verticalAlignment=Alignment.CenterVertically){Checkbox(selected.contains(u.userId),{if(it)selected.add(u.userId)else selected.remove(u.userId)});Text(u.nickname)}}}},confirmButton={TextButton({createGroup(name,selected.toList());dialog=false},enabled=selected.size>=2&&name.trim().length>=2){Text("创建")}},dismissButton={TextButton({dialog=false}){Text("取消")}})}
 }
-@Composable private fun Profile(state:AppState,rename:(String)->Unit,updateApiBaseUrl:(String)->Unit){
+@Composable private fun Profile(state:AppState,rename:(String)->Unit,updateApiBaseUrl:(String)->Unit,updateAesKey:(String)->Unit){
     var editingName by remember{mutableStateOf(false)};var name by remember(state.session?.nickname){mutableStateOf(state.session?.nickname.orEmpty())}
     var editingServer by remember{mutableStateOf(false)};var server by remember(state.apiBaseUrl){mutableStateOf(state.apiBaseUrl)}
-    Column{TopAppBar(title={Text("我的")});ListItem(headlineContent={Text(state.session?.nickname.orEmpty())},supportingContent={Text("匿名用户")},trailingContent={TextButton({editingName=true}){Text("修改")}});HorizontalDivider();ListItem(headlineContent={Text("服务器地址")},supportingContent={Text(state.apiBaseUrl)},leadingContent={Icon(Icons.Default.Dns,null)},trailingContent={TextButton({server=state.apiBaseUrl;editingServer=true}){Text("修改")}})}
+    var editingKey by remember{mutableStateOf(false)};var aesKey by remember(state.aesKey){mutableStateOf(state.aesKey)}
+    Column{TopAppBar(title={Text("我的")});ListItem(headlineContent={Text(state.session?.nickname.orEmpty())},supportingContent={Text("匿名用户")},trailingContent={TextButton({editingName=true}){Text("修改")}});HorizontalDivider();ListItem(headlineContent={Text("服务器地址")},supportingContent={Text(state.apiBaseUrl)},leadingContent={Icon(Icons.Default.Dns,null)},trailingContent={TextButton({server=state.apiBaseUrl;editingServer=true}){Text("修改")}});HorizontalDivider();ListItem(headlineContent={Text("消息 AES 密钥")},supportingContent={Text("AES-256-GCM · 已配置")},leadingContent={Icon(Icons.Default.Key,null)},trailingContent={TextButton({aesKey=state.aesKey;editingKey=true}){Text("修改")}})}
     if(editingName)AlertDialog(onDismissRequest={editingName=false},title={Text("修改昵称")},text={OutlinedTextField(name,{name=it},singleLine=true)},confirmButton={TextButton({rename(name);editingName=false}){Text("保存")}},dismissButton={TextButton({editingName=false}){Text("取消")}})
     if(editingServer)AlertDialog(onDismissRequest={editingServer=false},title={Text("修改服务器地址")},text={Column{OutlinedTextField(server,{server=it},label={Text("API Base URL")},singleLine=true);Spacer(Modifier.height(8.dp));Text("保存后将重新连接并创建此服务器上的会话",style=MaterialTheme.typography.bodySmall)}},confirmButton={TextButton({updateApiBaseUrl(server);editingServer=false}){Text("保存")}},dismissButton={TextButton({editingServer=false}){Text("取消")}})
+    if(editingKey)AlertDialog(onDismissRequest={editingKey=false},title={Text("修改消息 AES 密钥")},text={Column{OutlinedTextField(aesKey,{aesKey=it},label={Text("Base64 编码的 32 字节密钥")},singleLine=true);Spacer(Modifier.height(8.dp));Text("所有客户端与服务器必须使用相同密钥，否则无法收发新消息",style=MaterialTheme.typography.bodySmall)}},confirmButton={TextButton({updateAesKey(aesKey);editingKey=false}){Text("保存")}},dismissButton={TextButton({editingKey=false}){Text("取消")}})
 }
 @Composable private fun Empty(text:String)=Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(text,color=MaterialTheme.colorScheme.onSurfaceVariant)}
 
 @Composable private fun ChatScreen(state:AppState,vm:ChatViewModel){
     var text by remember{mutableStateOf("")}
-    val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let(vm::sendMedia)}
-    Scaffold(topBar={TopAppBar(title={Text(state.active?.name.orEmpty())},navigationIcon={IconButton(vm::closeChat){Icon(Icons.AutoMirrored.Filled.ArrowBack,"返回")}})},bottomBar={Row(Modifier.padding(8.dp).navigationBarsPadding(),verticalAlignment=Alignment.CenterVertically){IconButton({picker.launch(arrayOf("image/*","video/*"))}){Icon(Icons.Default.AttachFile,"发送图片或视频")};OutlinedTextField(text,{text=it},Modifier.weight(1f),placeholder={Text("输入消息")},maxLines=3);IconButton({vm.send(text);text=""}){Icon(Icons.AutoMirrored.Filled.Send,"发送")}}}){padding->LazyColumn(Modifier.padding(padding).fillMaxSize(),contentPadding=PaddingValues(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){items(state.messages,key={it.id}){m->Row(Modifier.fillMaxWidth(),horizontalArrangement=if(m.senderId==state.session?.userId)Arrangement.End else Arrangement.Start){Surface(color=if(m.senderId==state.session?.userId)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,shape=MaterialTheme.shapes.large){Column(Modifier.padding(10.dp).widthIn(max=280.dp)){if(m.senderId!=state.session?.userId)Text(m.senderNickname,style=MaterialTheme.typography.labelSmall);Text(when(m.type){"IMAGE"->"[图片]";"VIDEO"->"[视频]";else->m.text.orEmpty()})}}}}}}
+    val sendText={if(text.isNotBlank()){vm.send(text);text=""}}
+    val picker=rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()){uri->uri?.let(vm::sendMedia)}
+    Scaffold(
+        topBar={TopAppBar(title={Text(state.active?.name.orEmpty())},navigationIcon={IconButton(vm::closeChat){Icon(Icons.AutoMirrored.Filled.ArrowBack,"返回")}})},
+        bottomBar={Column(Modifier.navigationBarsPadding()){if(state.sendingMedia)LinearProgressIndicator(Modifier.fillMaxWidth());Surface(tonalElevation=3.dp,shadowElevation=6.dp){Row(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically){IconButton({picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))},enabled=!state.sendingMedia){Icon(Icons.Default.AddPhotoAlternate,"选择图片或视频",tint=MaterialTheme.colorScheme.primary)};OutlinedTextField(value=text,onValueChange={text=it.replace("\n","")},modifier=Modifier.weight(1f),placeholder={Text("输入消息")},singleLine=true,shape=MaterialTheme.shapes.extraLarge,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Send),keyboardActions=KeyboardActions(onSend={sendText()}),colors=OutlinedTextFieldDefaults.colors(unfocusedBorderColor=MaterialTheme.colorScheme.outlineVariant));Spacer(Modifier.width(4.dp));FilledIconButton(onClick=sendText,enabled=text.isNotBlank()){Icon(Icons.AutoMirrored.Filled.Send,"发送")}}}}}
+    ){padding->Box(Modifier.padding(padding).fillMaxSize()){LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){items(state.messages,key={it.id}){m->Row(Modifier.fillMaxWidth(),horizontalArrangement=if(m.senderId==state.session?.userId)Arrangement.End else Arrangement.Start){Surface(color=if(m.senderId==state.session?.userId)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,shape=MaterialTheme.shapes.large){Column(Modifier.padding(10.dp).widthIn(max=280.dp)){if(m.senderId!=state.session?.userId)Text(m.senderNickname,style=MaterialTheme.typography.labelSmall);Text(when(m.type){"IMAGE"->"[图片]";"VIDEO"->"[视频]";else->m.text.orEmpty()})}}}}};state.error?.let{Surface(Modifier.align(Alignment.BottomCenter).padding(12.dp),color=MaterialTheme.colorScheme.errorContainer,shape=MaterialTheme.shapes.medium){Text(it,Modifier.padding(12.dp),color=MaterialTheme.colorScheme.onErrorContainer)}}}}
 }

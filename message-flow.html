@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ChatFei 消息从发送方经过服务器到接收方的完整处理流程">
+  <title>ChatFei 消息传递流程</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2310192b'/%3E%3Cpath d='M15 18h34v23H30L20 49v-8h-5z' fill='%235eead4'/%3E%3Ccircle cx='24' cy='30' r='3' fill='%2310192b'/%3E%3Ccircle cx='32' cy='30' r='3' fill='%2310192b'/%3E%3Ccircle cx='40' cy='30' r='3' fill='%2310192b'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --ink: #e9f1ff;
+      --muted: #9caecc;
+      --panel: rgba(17, 29, 51, .82);
+      --line: rgba(160, 181, 216, .18);
+      --cyan: #5eead4;
+      --blue: #73a7ff;
+      --amber: #fbbf67;
+      --red: #fb7185;
+      --bg: #07101f;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 18% 5%, rgba(54, 211, 184, .13), transparent 25rem),
+        radial-gradient(circle at 88% 22%, rgba(88, 132, 246, .14), transparent 28rem),
+        var(--bg);
+      font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button { font: inherit; }
+    .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 54px 0 72px; }
+    header { display: grid; grid-template-columns: 1fr auto; gap: 28px; align-items: end; margin-bottom: 34px; }
+    .eyebrow { margin: 0 0 8px; color: var(--cyan); font: 700 .78rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 0; max-width: 780px; font-size: clamp(2.2rem, 6vw, 4.8rem); line-height: .98; letter-spacing: -.055em; }
+    .lead { max-width: 720px; margin: 22px 0 0; color: var(--muted); font-size: 1.06rem; }
+    .status-control { padding: 6px; display: flex; gap: 5px; border: 1px solid var(--line); border-radius: 14px; background: rgba(9, 18, 34, .8); }
+    .status-control button { border: 0; border-radius: 9px; padding: 9px 14px; color: var(--muted); background: transparent; cursor: pointer; }
+    .status-control button[aria-selected="true"] { color: #07101f; background: var(--cyan); font-weight: 800; }
+    .flow {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr 72px 1.12fr 72px 1fr;
+      align-items: stretch;
+      margin-top: 22px;
+    }
+    .actor { min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: 22px; background: var(--panel); backdrop-filter: blur(12px); box-shadow: 0 22px 60px rgba(0, 0, 0, .22); }
+    .actor.server { background: linear-gradient(145deg, rgba(27, 45, 76, .93), rgba(13, 26, 47, .9)); }
+    .actor-head { display: flex; align-items: center; gap: 13px; padding-bottom: 19px; border-bottom: 1px solid var(--line); }
+    .icon { width: 44px; height: 44px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 13px; background: rgba(94, 234, 212, .1); color: var(--cyan); }
+    .icon svg { width: 25px; height: 25px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+    h2 { margin: 0; font-size: 1.08rem; }
+    .role { display: block; color: var(--muted); font-size: .78rem; }
+    .steps { margin: 0; padding: 19px 0 0; list-style: none; counter-reset: step; }
+    .steps li { position: relative; margin-left: 12px; padding: 0 0 20px 25px; border-left: 1px solid rgba(115, 167, 255, .3); color: var(--muted); }
+    .steps li:last-child { padding-bottom: 0; border-left-color: transparent; }
+    .steps li::before { counter-increment: step; content: counter(step); position: absolute; left: -12px; top: 0; width: 23px; height: 23px; display: grid; place-items: center; border-radius: 50%; color: #08111f; background: var(--blue); font: 800 .73rem/1 ui-monospace, monospace; }
+    .steps strong { color: var(--ink); }
+    .connector { display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--blue); }
+    .connector .protocol { margin-bottom: 7px; color: var(--muted); font: 700 .68rem/1 ui-monospace, monospace; letter-spacing: .08em; }
+    .arrow { display: flex; width: 100%; align-items: center; }
+    .arrow::before { content: ""; width: 100%; border-top: 2px dashed currentColor; animation: pulse 1.8s infinite; }
+    .arrow::after { content: ""; width: 9px; height: 9px; margin-left: -9px; border-top: 2px solid currentColor; border-right: 2px solid currentColor; transform: rotate(45deg); }
+    @keyframes pulse { 50% { opacity: .35; } }
+    .summary { margin-top: 22px; padding: 18px 20px; display: flex; gap: 14px; align-items: flex-start; border: 1px solid rgba(94, 234, 212, .26); border-radius: 16px; background: rgba(94, 234, 212, .07); }
+    .summary-dot { width: 10px; height: 10px; margin-top: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 18px var(--cyan); }
+    .summary p { margin: 0; }
+    .summary .offline-copy { display: none; }
+    body[data-mode="offline"] .summary { border-color: rgba(251, 191, 103, .3); background: rgba(251, 191, 103, .07); }
+    body[data-mode="offline"] .summary-dot { background: var(--amber); box-shadow: 0 0 18px var(--amber); }
+    body[data-mode="offline"] .online-copy { display: none; }
+    body[data-mode="offline"] .offline-copy { display: block; }
+    body[data-mode="offline"] .receiver { opacity: .5; }
+    body[data-mode="offline"] .to-receiver { color: var(--amber); }
+    body[data-mode="offline"] .to-receiver .protocol { color: var(--amber); }
+    .code-section { margin-top: 56px; }
+    .section-title { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 18px; }
+    h3 { margin: 0; font-size: clamp(1.45rem, 3vw, 2.2rem); letter-spacing: -.03em; }
+    .section-title p { margin: 0; color: var(--muted); }
+    .code-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .code-card { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: #091426; }
+    .code-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .76rem; }
+    .code-meta b { color: var(--ink); font-size: .84rem; }
+    pre { margin: 0; padding: 18px; overflow: auto; color: #c7d7f3; font: .78rem/1.72 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; }
+    .kw { color: #c792ea; } .fn { color: #82aaff; } .str { color: #c3e88d; } .cm { color: #71809a; }
+    .note-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 28px; }
+    .note { padding: 18px; border-top: 2px solid var(--cyan); background: rgba(255,255,255,.025); }
+    .note:nth-child(2) { border-color: var(--blue); } .note:nth-child(3) { border-color: var(--amber); }
+    .note b { display: block; margin-bottom: 5px; }
+    .note p { margin: 0; color: var(--muted); font-size: .92rem; }
+    footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .82rem; }
+    @media (max-width: 920px) {
+      header { grid-template-columns: 1fr; align-items: start; }
+      .status-control { width: max-content; }
+      .flow { grid-template-columns: 1fr; gap: 12px; }
+      .connector { height: 58px; }
+      .arrow { width: 2px; height: 38px; flex-direction: column; }
+      .arrow::before { height: 100%; width: 0; border-top: 0; border-left: 2px dashed currentColor; }
+      .arrow::after { margin: -9px 0 0; transform: rotate(135deg); }
+      .code-grid, .note-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .shell { width: min(100% - 20px, 1180px); padding-top: 34px; }
+      header { gap: 20px; }
+      .actor { padding: 19px; border-radius: 17px; }
+      .section-title { display: block; }
+      .section-title p { margin-top: 5px; }
+      .status-control { width: 100%; }
+      .status-control button { flex: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; animation: none !important; } }
+  </style>
+</head>
+<body data-mode="online">
+  <main class="shell">
+    <header>
+      <div>
+        <p class="eyebrow">ChatFei / Message Pipeline</p>
+        <h1>一条消息，如何到达对方手机？</h1>
+        <p class="lead">发送方通过 HTTP 把消息交给服务器；服务器先持久化，再通过已有的 WebSocket 长连接通知在线接收方。接收方收到事件后，重新拉取最新消息。</p>
+      </div>
+      <div class="status-control" role="tablist" aria-label="接收方在线状态">
+        <button type="button" role="tab" aria-selected="true" data-mode="online">对方在线</button>
+        <button type="button" role="tab" aria-selected="false" data-mode="offline">对方离线</button>
+      </div>
+    </header>
+
+    <section class="flow" aria-label="消息传递流程">
+      <article class="actor">
+        <div class="actor-head">
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M9 6h6M10.5 18.5h3"/></svg></span>
+          <div><span class="role">Android 客户端</span><h2>发送方手机</h2></div>
+        </div>
+        <ol class="steps">
+          <li><strong>AES 加密正文</strong><br>生成唯一 clientMessageId。</li>
+          <li><strong>调用发送接口</strong><br>POST /api/conversations/{id}/messages。</li>
+          <li><strong>等待服务器响应</strong><br>成功后刷新当前会话。</li>
+        </ol>
+      </article>
+
+      <div class="connector" aria-label="通过 HTTP 发送"><span class="protocol">HTTPS</span><span class="arrow"></span></div>
+
+      <article class="actor server">
+        <div class="actor-head">
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/></svg></span>
+          <div><span class="role">Spring Boot + PostgreSQL</span><h2>ChatFei 服务器</h2></div>
+        </div>
+        <ol class="steps">
+          <li><strong>认证与权限校验</strong><br>确认发送人属于该会话。</li>
+          <li><strong>消息写入数据库</strong><br>离线时也不会丢失。</li>
+          <li><strong>查询会话成员</strong><br>取得全部接收用户 ID。</li>
+          <li><strong>查找在线连接</strong><br>按用户 ID 取 WebSocketSession。</li>
+          <li><strong>推送 MESSAGE_CREATED</strong><br>只向当前在线成员实时发送。</li>
+        </ol>
+      </article>
+
+      <div class="connector to-receiver" aria-label="通过 WebSocket 推送"><span class="protocol">WEBSOCKET</span><span class="arrow"></span></div>
+
+      <article class="actor receiver">
+        <div class="actor-head">
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M9 6h6M10.5 18.5h3"/><path d="m2.5 11 2 2 3.5-4"/></svg></span>
+          <div><span class="role">Android 客户端</span><h2>接收方手机</h2></div>
+        </div>
+        <ol class="steps">
+          <li><strong>收到 WebSocket 事件</strong><br>RealtimeClient.onMessage 被调用。</li>
+          <li><strong>触发 refresh()</strong><br>刷新会话及在线用户。</li>
+          <li><strong>拉取最新消息</strong><br>GET /messages 并更新聊天界面。</li>
+        </ol>
+      </article>
+    </section>
+
+    <aside class="summary" aria-live="polite">
+      <span class="summary-dot" aria-hidden="true"></span>
+      <p class="online-copy"><strong>在线结果：</strong>服务器通过现有 WebSocket 连接立即通知对方；对方收到事件后从服务器拉取最新消息。</p>
+      <p class="offline-copy"><strong>离线结果：</strong>消息已经保存在数据库，但服务器找不到对方的 WebSocket 连接，因此不会立即到达手机；对方下次启动 App 后再从服务器拉取。目前没有接入 FCM 离线推送。</p>
+    </aside>
+
+    <section class="code-section">
+      <div class="section-title"><h3>三个关键代码点</h3><p>发送、转发、接收</p></div>
+      <div class="code-grid">
+        <article class="code-card">
+          <div class="code-meta"><b>① 手机发送</b><span>ApiClient.kt</span></div>
+          <pre><span class="kw">fun</span> <span class="fn">sendText</span>(token, conversationId, text) =
+  <span class="fn">postJson</span>(
+    <span class="str">"/api/conversations/$conversationId/messages"</span>,
+    token,
+    JSONObject()
+      .put(<span class="str">"type"</span>, <span class="str">"TEXT"</span>)
+      .put(<span class="str">"encryptedText"</span>, <span class="fn">encrypt</span>(text))
+  )</pre>
+        </article>
+        <article class="code-card">
+          <div class="code-meta"><b>② 服务器保存并推送</b><span>ConversationController.java</span></div>
+          <pre>MessageView message = chat.<span class="fn">send</span>(
+  me, id, clientMessageId, type,
+  text, encryptedText, mediaId
+);
+
+realtime.<span class="fn">send</span>(
+  chat.<span class="fn">memberIds</span>(id),
+  <span class="str">"MESSAGE_CREATED"</span>, message
+);</pre>
+        </article>
+        <article class="code-card">
+          <div class="code-meta"><b>③ 对方收到事件</b><span>RealtimeClient.kt</span></div>
+          <pre><span class="kw">override fun</span> <span class="fn">onMessage</span>(
+  webSocket: WebSocket,
+  text: String
+) {
+  listeners.toList().forEach {
+    it(text) <span class="cm">// ViewModel 调用 refresh()</span>
+  }
+}</pre>
+        </article>
+      </div>
+    </section>
+
+    <section class="note-grid" aria-label="实现说明">
+      <article class="note"><b>不是手机之间直连</b><p>发送方和接收方不会互相建立连接，所有消息都经过 ChatFei 服务器。</p></article>
+      <article class="note"><b>实时事件不是最终数据源</b><p>WebSocket 负责通知“有新消息”，数据库和 GET /messages 才是最终数据来源。</p></article>
+      <article class="note"><b>当前没有离线系统推送</b><p>前台服务维持在线连接，但 App 真正离线时不会像微信一样收到系统通知。</p></article>
+    </section>
+
+    <footer>基于当前 ChatFei 项目源码整理 · 单文件页面，可直接在浏览器中打开</footer>
+  </main>
+  <script>
+    const controls = document.querySelectorAll('[data-mode]');
+    controls.forEach((button) => button.addEventListener('click', () => {
+      document.body.dataset.mode = button.dataset.mode;
+      controls.forEach((item) => item.setAttribute('aria-selected', String(item === button)));
+    }));
+  </script>
+</body>
+</html>

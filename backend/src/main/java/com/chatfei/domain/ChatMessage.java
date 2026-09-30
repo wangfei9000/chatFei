@@ -14,11 +14,14 @@ public class ChatMessage {
     @Column(nullable=false) private UUID senderId;
     @Enumerated(EnumType.STRING) @Column(nullable=false,length=12) private Type type;
     @Column(length=4000) private String textContent;
+    @Column(columnDefinition="TEXT") private String encryptedContent;
+    @Column(columnDefinition="TEXT") private String plainTextContent;
     private UUID mediaId;
     @Column(nullable=false) private Instant createdAt;
     protected ChatMessage(){}
-    public ChatMessage(UUID id,String clientId,UUID conversationId,UUID senderId,Type type,String text,UUID mediaId){this.id=id;this.clientMessageId=clientId;this.conversationId=conversationId;this.senderId=senderId;this.type=type;this.textContent=text;this.mediaId=mediaId;this.createdAt=Instant.now();}
+    public ChatMessage(UUID id,String clientId,UUID conversationId,UUID senderId,Type type,String text,String encryptedText,String plainText,UUID mediaId){this.id=id;this.clientMessageId=clientId;this.conversationId=conversationId;this.senderId=senderId;this.type=type;this.textContent=text;this.encryptedContent=encryptedText;this.plainTextContent=plainText;this.mediaId=mediaId;this.createdAt=Instant.now();}
     public UUID getId(){return id;} public String getClientMessageId(){return clientMessageId;} public UUID getConversationId(){return conversationId;}
     public UUID getSenderId(){return senderId;} public Type getType(){return type;} public String getTextContent(){return textContent;}
+    public String getEncryptedContent(){return encryptedContent;} public String getPlainTextContent(){return plainTextContent;}
     public UUID getMediaId(){return mediaId;} public Instant getCreatedAt(){return createdAt;}
 }
